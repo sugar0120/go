@@ -4,7 +4,12 @@ These are image super-resolution models, not LLMs. They take a small texture
 and output a larger one, and they're trained on pairs of low-res and high-res
 images, not on text.
 
-## Decision
+> **Current plan:** [`PLAN.md`](../PLAN.md) uses the lighter option, a
+> one-stage fine-tune of 4x-UltraSharp (~30–40k iterations, 1–2 molab
+> sessions). The rest of this page is the full HAT-L option, for when you
+> want more than that.
+
+## Decision (full option)
 
 | Role | Model | Why |
 |---|---|---|
