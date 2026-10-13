@@ -44,7 +44,7 @@ CANDIDATES: list[Candidate] = [
               "expect clean bicubic input."),
     Candidate("supir", "SUPIR (SDXL diffusion)", 2600, "github.com/Fanghua-Yu/SUPIR",
               "Diffusion upscaler: invents new detail, may change the art. "
-              "Needs ~24 GB+ VRAM and its own install; hero assets only, "
+              "Fits molab's 96 GB GPU, but needs its own install; hero assets only, "
               "always review by hand.", via_spandrel=False),
 ]
 

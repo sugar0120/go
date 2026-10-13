@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["marimo", "numpy", "pillow", "torch", "spandrel"]
+# dependencies = ["marimo", "numpy", "pillow", "torch>=2.7", "spandrel"]
 # ///
 """Step 3: run the chosen model over a category and QA the results.
 

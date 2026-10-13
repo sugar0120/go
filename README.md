@@ -18,7 +18,8 @@ The work runs in **marimo notebooks**, which open in molab or run locally.
 | 2. Choose model | `notebooks/02_benchmark_upscalers.py` | Compares candidate models (`ca_pipeline/catalog.py`) on pilot textures: side by side, seconds per texture, peak VRAM. |
 | 3. Upscale + QA | `notebooks/03_upscale_batch.py` | Upscales one category at a time into `assets/output/`. Handles alpha, tiling seams and normal maps, fits to engine limits, and runs QA checks and a VRAM estimate. |
 | 4. Fine-tune | `notebooks/04_build_training_set.py` + `docs/TRAINING.md` | Builds HR/LR training pairs that mimic the game's DXT textures, for fine-tuning the production model. |
-| 5. Repack | outside this repo | Convert PNG back to DTX (DXT1 for opaque or cutout, DXT5 for smooth alpha, see `qa.pick_format`), rebuild the REZ archives, and test in the client. |
+| 5. Train (molab) | `notebooks/05_train_session.py` | One 12-hour molab session of training on the Blackwell GPU. Pulls the dataset and checkpoints from a private HF repo, pushes checkpoints every 10 minutes, and stops before the cutoff. Rerun it until training finishes. |
+| 6. Repack | outside this repo | Convert PNG back to DTX (DXT1 for opaque or cutout, DXT5 for smooth alpha, see `qa.pick_format`), rebuild the REZ archives, and test in the client. |
 
 **Model decision:** a fine-tuned HAT-L for production, with 4x-UltraSharp
 as the interim model and the bar to beat. The reasoning and the full training
@@ -44,11 +45,16 @@ On molab, open a notebook from this GitHub repo. Each notebook declares its
 own dependencies in its header and imports `ca_pipeline` from the repo root.
 Model weights go in `./models/`, which is git-ignored.
 
+molab gives each notebook an RTX Pro 6000 Blackwell (96 GB, turn it on from
+the notebook specs button), 4 CPUs and 32 GB of RAM, for up to 12 hours per
+session. Only about 1 GB of files persists, so datasets and checkpoints live in a
+private Hugging Face repo. See [`docs/TRAINING.md`](docs/TRAINING.md#3-running-on-molab).
+
 ## Layout
 
 ```
-ca_pipeline/   config (engine limits), manifest, textures, degrade, qa, catalog
-notebooks/     01-04 marimo notebooks
+ca_pipeline/   config (engine limits), manifest, textures, degrade, qa, catalog, gpu, sync
+notebooks/     01-05 marimo notebooks
 docs/          TRAINING.md
 assets/        original/ converted/ work/ output/  (tracked with Git LFS)
 tests/         pytest suite

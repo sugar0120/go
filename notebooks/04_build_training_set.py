@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["marimo", "numpy", "pillow"]
+# dependencies = ["marimo", "numpy", "pillow", "huggingface_hub"]
 # ///
 """Step 4 (fine-tuning): build HR/LR pairs that look like Combat Arms textures.
 
@@ -62,6 +62,30 @@ def _(Image, crop, degrade, dst, mo, np, per_image, random_crops, run, src, val_
             counts[split] += 1
     mo.md(f"Built **{counts['train']}** training and **{counts['val']}** validation pairs "
           f"from {len(files)} source images.")
+    return
+
+
+@app.cell
+def _(mo):
+    # molab keeps only ~1 GB of notebook files, so the dataset must live in a
+    # private HF repo that every training session pulls from (notebook 05).
+    hf_repo = mo.ui.text(placeholder="your-hf-user/ca-rebuild-training", label="Private HF dataset repo",
+                         full_width=True)
+    push = mo.ui.run_button(label="Upload dataset to HF")
+    mo.vstack([hf_repo, push])
+    return hf_repo, push
+
+
+@app.cell
+def _(ROOT, dst, hf_repo, mo, push):
+    mo.stop(not push.value)
+    import os
+    from pathlib import Path as _Path
+
+    from ca_pipeline.sync import HFRemote
+
+    HFRemote(hf_repo.value, token=os.environ.get("HF_TOKEN")).upload_folder(_Path(dst.value), "dataset")
+    mo.md(f"Uploaded `{dst.value}` to `{hf_repo.value}` under `dataset/`.")
     return
 
 

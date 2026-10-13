@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["marimo", "numpy", "pillow", "torch", "spandrel"]
+# dependencies = ["marimo", "numpy", "pillow", "torch>=2.7", "spandrel"]
 # ///
 """Step 2: pick the upscaling model by measuring, not guessing.
 
@@ -34,16 +34,19 @@ def _():
 
 @app.cell
 def _(catalog, mo):
+    from ca_pipeline import gpu
+
+    info = gpu.describe()
     try:
         import torch
-        gpu = torch.cuda.get_device_properties(0) if torch.cuda.is_available() else None
     except ImportError:
-        torch, gpu = None, None
-    vram = gpu.total_memory / 2**30 if gpu else 0.0
-    gpu_text = f"{gpu.name}, {vram:.0f} GiB" if gpu else "no CUDA GPU (CPU only)"
+        torch = None
+    gpu_text = (f"{info['name']}, {info['vram_gib']:.0f} GiB" if info["name"]
+                else "no CUDA GPU (CPU only); turn it on from the notebook specs button")
     mo.vstack([
         mo.md(f"**GPU:** {gpu_text}"),
-        mo.md("**Practical candidates here:** " + ", ".join(catalog.recommend_for_vram(vram))),
+        mo.callout(mo.md("<br>".join(info["issues"])), kind="danger") if info["issues"] else mo.md(""),
+        mo.md("**Practical candidates here:** " + ", ".join(catalog.recommend_for_vram(info["vram_gib"]))),
         mo.ui.table([c.__dict__ for c in catalog.CANDIDATES], selection=None),
     ])
     return (torch,)

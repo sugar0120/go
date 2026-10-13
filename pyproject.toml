@@ -6,8 +6,9 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "pillow>=10", "marimo>=0.9"]
 
 [project.optional-dependencies]
-# AI upscaling (ESRGAN-family .pth/.safetensors models). Needs a GPU to be practical.
-ai = ["torch>=2.1", "spandrel>=0.3"]
+# AI upscaling + training sync. torch 2.7+ with CUDA 12.8+ is required for
+# Blackwell GPUs (molab RTX Pro 6000); older builds fail with "no kernel image".
+ai = ["torch>=2.7", "spandrel>=0.3", "huggingface_hub>=0.24"]
 dev = ["pytest>=8"]
 
 [build-system]

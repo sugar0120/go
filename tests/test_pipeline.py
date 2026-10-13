@@ -110,3 +110,52 @@ def test_bc3_alpha_and_degrade():
 def test_target_scale_downsamples_4x_model_output():
     out = process_texture(_noise(32, 32), LanczosUpscaler(4), target_scale=2)
     assert out.size == (64, 64)
+
+
+def test_checkpoint_sync_roundtrip(tmp_path):
+    import os
+    from ca_pipeline.sync import CheckpointSync, LocalRemote, newest_checkpoints, session_deadline
+
+    remote = LocalRemote(tmp_path / "remote")
+    run = tmp_path / "run1"
+    (run / "training_states").mkdir(parents=True)
+    for i in range(3):
+        f = run / "training_states" / f"{i}.state"
+        f.write_text(str(i))
+        os.utime(f, (i, i))
+    assert [p.name for p in newest_checkpoints(run, keep=2)] == ["2.state", "1.state"]
+
+    sync = CheckpointSync(remote, run, prefix="runs/x", interval=3600)
+    sync.start()
+    (run / "models").mkdir()
+    (run / "models" / "net_g_5000.safetensors").write_text("w")
+    pushed = sync.stop()
+    assert {p.name for p in pushed} == {"2.state", "1.state", "net_g_5000.safetensors"}
+    assert sync.push_new() == []  # nothing new, nothing re-uploaded
+
+    fresh = CheckpointSync(remote, tmp_path / "run2", prefix="runs/x")
+    fresh.pull()  # a new session resumes from what the old one pushed
+    assert (tmp_path / "run2" / "models" / "net_g_5000.safetensors").read_text() == "w"
+    assert fresh.push_new() == []
+    assert session_deadline(0, 12, 45) == 12 * 3600 - 45 * 60
+
+
+def test_blackwell_issues():
+    from ca_pipeline.gpu import blackwell_issues
+
+    assert blackwell_issues((12, 0), "12.8", ["sm_90", "sm_120"]) == []
+    assert len(blackwell_issues((12, 0), "12.4", ["sm_90"])) == 2
+    assert blackwell_issues((12, 0), None, []) != []
+    assert blackwell_issues((8, 0), "11.8", ["sm_80"]) == []  # Ampere: not our concern
+
+
+def test_dataset_folder_upload_and_pull(tmp_path):
+    from ca_pipeline.sync import LocalRemote
+
+    ds = tmp_path / "dataset" / "train" / "hr"
+    ds.mkdir(parents=True)
+    (ds / "a.png").write_text("x")
+    remote = LocalRemote(tmp_path / "remote")
+    remote.upload_folder(tmp_path / "dataset", "dataset")
+    remote.download("dataset", tmp_path / "pulled")
+    assert (tmp_path / "pulled" / "train" / "hr" / "a.png").exists()

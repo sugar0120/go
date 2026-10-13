@@ -45,22 +45,50 @@ and set:
 | scale | 4 |
 | dataset type | paired (`training/dataset/train/{hr,lr}`), val on `.../val/{hr,lr}` |
 | LR patch size | 64 (HR 256) |
-| batch size | 8 at 24 GB, 16+ at 48–80 GB |
-| precision | bf16 AMP, with EMA weights |
+| batch size | 32 on molab's 96 GB GPU. Lower it if the 4 CPUs can't keep the GPU busy (GPU utilization under ~80%) |
+| precision | bf16 AMP (native on Blackwell), with EMA weights |
 | pretrained generator | `Real_HAT_GAN_SRx4` (strict load) |
 | **Stage A** | ~50k iterations, L1 + perceptual loss, lr 1e-4 |
 | **Stage B** | ~50–100k iterations, adds GAN loss (weight ~0.1) with a UNet discriminator, lr 1e-4 then halved at milestones |
-| checkpoints | every 5k iterations, to persistent storage |
+| checkpoints | every 1k iterations (molab GPU sessions can end early). Notebook 05 uploads them |
 | validation | every 5k iterations: PSNR/SSIM plus LPIPS |
 
-### 3. Hardware and time
-- HAT-L training needs **at least 24 GB of VRAM**; 40–80 GB is comfortable.
-- On one A100/H100-class GPU, expect roughly **1–3 days** for both stages.
-  This is an estimate, so time the first 1k iterations and extrapolate.
-- molab is a good fit for building the dataset, benchmarking and batch
-  upscaling. Before running a multi-day training job there, check its session
-  and runtime limits. If sessions can't run unattended that long, train on a
-  rented GPU and bring the `.safetensors` back into `./models/`.
+### 3. Running on molab
+
+**What molab provides** (public preview; marimo says these may change):
+
+| | |
+|---|---|
+| GPU | NVIDIA RTX Pro 6000 **Blackwell**, 96 GB GDDR7. Turn it on from the notebook specs button |
+| CPU / RAM | 4 CPUs, 32 GB |
+| Session | 12 hours max. Shut down after 90 minutes idle |
+| Persistent files | about 1 GB of notebook files. Anything larger is lost at shutdown |
+| Cost | free while in preview |
+
+**How this pipeline works within those limits:**
+- **Blackwell:** needs PyTorch 2.7+ built for CUDA 12.8+. Notebooks 02 and 05
+  check this at startup.
+- **12-hour sessions:** notebook 05 runs one session, stops training 45
+  minutes before the 12-hour cutoff, and uploads the last checkpoint. The next
+  session resumes from it. Plan on **3–6 sessions** for both stages, roughly
+  1–3 days of GPU time (an estimate, so time the first 1k iterations).
+- **Early GPU reclaims:** an open marimo issue (marimo-team/marimo#11058,
+  October 2026) reports GPU sandboxes reclaimed after 15–45 minutes. So
+  checkpoints are saved every 1k iterations and pushed every 10 minutes, and
+  the most you can lose is about 10 minutes of training.
+- **1 GB persistence:** the dataset (several GB) and checkpoints (around
+  0.5 GB each with optimizer state) live in a **private Hugging Face dataset
+  repo**. Notebook 04 uploads the dataset, and notebook 05 pulls the dataset
+  and the latest checkpoint into `/tmp` at the start of each session. Upload
+  your trainer config to `configs/` in that repo. Store an `HF_TOKEN` with
+  write access as a molab secret.
+- **4 CPUs:** never degrade images on the fly during training. The dataset is
+  pre-built, and the trainer only loads PNGs. If GPU utilization is low,
+  lower the batch size or the dataloader worker count rather than adding
+  augmentation.
+- **90-minute idle shutdown:** it's unclear whether a running cell counts as
+  activity. Keep the notebook open, and check on your first run that it
+  survives past 90 minutes.
 
 ### 4. Picking the checkpoint
 1. Shortlist 3–5 checkpoints with the best LPIPS on the validation set. LPIPS
