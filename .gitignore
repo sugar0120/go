@@ -7,3 +7,11 @@ assets/work/*
 models/
 .pytest_cache/
 training/
+
+# game assets must never be committed (public repo, Nexon content)
+pilot/*.dtx
+pilot/out*/
+pilot/staged/
+*.dtx
+*.rez
+*.ltb
