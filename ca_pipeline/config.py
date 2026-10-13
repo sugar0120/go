@@ -27,11 +27,12 @@ class CategoryPolicy:
     priority: int  # 1 = do first
 
 
-# Hero assets get 4x, everything else 2x to stay inside the VRAM budget.
-# Lightmaps and skies are re-baked/replaced rather than upscaled (scale 1).
+# "70% plan" (PLAN.md): only first-person weapons get 4x; everything else 2x,
+# which is most of the visible gain for a fraction of the time and VRAM.
+# Lightmaps and skies are left as they are (scale 1).
 CATEGORY_POLICY: dict[str, CategoryPolicy] = {
     "weapon": CategoryPolicy(scale=4, priority=1),
-    "character": CategoryPolicy(scale=4, priority=2),
+    "character": CategoryPolicy(scale=2, priority=2),
     "ui": CategoryPolicy(scale=2, priority=3),
     "prop": CategoryPolicy(scale=2, priority=4),
     "world": CategoryPolicy(scale=2, priority=5),

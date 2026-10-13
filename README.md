@@ -9,6 +9,10 @@ the originals. Engine limits and per-category upscale scales live in
 
 The work runs in **marimo notebooks**, which open in molab or run locally.
 
+**Start with [`PLAN.md`](PLAN.md)**, the lighter "70%" plan: pretrained models,
+textures only, about 1–2 weeks part-time. The fine-tuning steps (4–5) below are
+optional extras.
+
 ## Workflow
 
 | Step | Where | What |
@@ -21,8 +25,8 @@ The work runs in **marimo notebooks**, which open in molab or run locally.
 | 5. Train (molab) | `notebooks/05_train_session.py` | One 12-hour molab session of training on the Blackwell GPU. Pulls the dataset and checkpoints from a private HF repo, pushes checkpoints every 10 minutes, and stops before the cutoff. Rerun it until training finishes. |
 | 6. Repack | outside this repo | Convert PNG back to DTX (DXT1 for opaque or cutout, DXT5 for smooth alpha, see `qa.pick_format`), rebuild the REZ archives, and test in the client. |
 
-**Model decision:** a fine-tuned HAT-L for production, with 4x-UltraSharp
-as the interim model and the bar to beat. The reasoning and the full training
+**Model decision:** 4x-UltraSharp, pretrained (see `PLAN.md`). A fine-tuned
+HAT-L is the optional upgrade if you want more. The reasoning and the full training
 recipe are in [`docs/TRAINING.md`](docs/TRAINING.md).
 
 **Models (meshes):** export to OBJ and rework in Blender, keeping bone
