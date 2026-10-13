@@ -1,0 +1,18 @@
+[project]
+name = "ca-pipeline"
+version = "0.1.0"
+description = "Asset upgrade pipeline for a private Combat Arms (2017 BR) rebuild on LithTech Jupiter EX"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "pillow>=10", "marimo>=0.9"]
+
+[project.optional-dependencies]
+# AI upscaling (ESRGAN-family .pth/.safetensors models). Needs a GPU to be practical.
+ai = ["torch>=2.1", "spandrel>=0.3"]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ca_pipeline"]
