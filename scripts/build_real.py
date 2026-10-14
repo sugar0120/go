@@ -37,6 +37,12 @@ orig = dtx.parse(tsrc[tit.pos:tit.pos + tit.size])
 if "--tex-file" in opt:
     new_tex = open(opt["--tex-file"], "rb").read()
     print("texture: using", opt["--tex-file"], dtx.parse(new_tex).width)
+elif opt.get("--style") == "gloss":
+    from ca_pipeline import texstyle
+
+    arr = np.asarray(texstyle.gloss(Image.fromarray(dtx.decode(orig)[..., :3]), scale))
+    new_tex = dtx.write(orig, np.concatenate([arr, np.full(arr.shape[:2] + (1,), 255, np.uint8)], -1))
+    print("texture: gloss style,", orig.width, "->", orig.width * scale)
 else:
     im = Image.fromarray(dtx.decode(orig)[..., :3]).resize((orig.width * scale, orig.height * scale), Image.LANCZOS)
 
