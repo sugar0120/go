@@ -145,3 +145,135 @@ def serialize(f: LtbFile, patch_allocations: bool = True) -> bytes:
     body = serialize_mesh(f.mesh)
     data = bytearray(f.prefix) + struct.pack('<I', len(body)) + body + f.suffix
     return bytes(data)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# General models: several pieces, each either a skinned mesh (object type 5, parsed above) or a rigid mesh
+# (object type 4: one bone per piece, no bone sets). Verified on PV_SR_L96A1_SH (1 skinned piece) and
+# PV_SR_L96A1_SUPER_MAGNUM_SH (3 rigid pieces): the computed object sizes match the files to the byte.
+#
+# Rigid mesh object: u32 size, u32 vertCount, u32 polyCount, u32 maxBonesPerTri, u32 maxBonesPerVert,
+#   u32[4] stream flags, u32 boneEffector, vertices (flags 0x13 = pos f32x3, normal f32x3, uv f32x2 = 32 bytes),
+#   u16 indices[polyCount*3].
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+@dataclass
+class RigidMesh:
+    max_bones_per_tri: int
+    max_bones_per_vert: int
+    stream_flags: tuple
+    bone_effector: int
+    pos: np.ndarray
+    normal: np.ndarray
+    uv: np.ndarray
+    tris: np.ndarray
+
+    @property
+    def n_verts(self):
+        return len(self.pos)
+
+    @property
+    def n_tris(self):
+        return len(self.tris)
+
+
+@dataclass
+class Model:
+    segments: list   # opaque bytes between/around the meshes; len(segments) == len(meshes) + 1
+    meshes: list     # SkelMesh or RigidMesh, one per (piece, LOD), in file order
+    names: list
+    lods: list       # LOD index of each mesh (0 = most detailed)
+
+
+def _parse_rigid(data, p):
+    nv, npoly, mbt, mbv = struct.unpack_from('<4I', data, p + 4)
+    flags = struct.unpack_from('<4I', data, p + 20)
+    be, = struct.unpack_from('<I', data, p + 36)
+    if flags != (0x13, 0, 0, 0):
+        raise ValueError(f'unsupported rigid vertex format {flags}')
+    q = p + 40
+    f = np.frombuffer(data, np.float32, nv * 8, q).reshape(nv, 8)
+    q += nv * 32
+    tris = np.frombuffer(data, np.uint16, npoly * 3, q).reshape(npoly, 3)
+    return RigidMesh(mbt, mbv, flags, be, f[:, 0:3].copy(), f[:, 3:6].copy(), f[:, 6:8].copy(), tris.copy())
+
+
+def _serialize_rigid(m: RigidMesh) -> bytes:
+    body = struct.pack('<4I', m.n_verts, m.n_tris, m.max_bones_per_tri, m.max_bones_per_vert)
+    body += struct.pack('<4I', *m.stream_flags) + struct.pack('<I', m.bone_effector)
+    body += np.concatenate([m.pos, m.normal, m.uv], axis=1).astype('<f4').tobytes()
+    body += m.tris.astype('<u2').tobytes()
+    return body
+
+
+def parse_model(data: bytes) -> Model:
+    if data[0] != 1 or struct.unpack_from('<H', data, 2)[0] != 9:
+        raise ValueError('not a D3D model LTB v9')
+    if struct.unpack_from('<I', data, HEADER)[0] != 25:
+        raise ValueError('only file version 25 was checked')
+    p = HEADER + 4 + 60
+    _, p = _string(data, p)
+    p += 4
+    if struct.unpack_from('<I', data, p)[0]:
+        raise ValueError('OBBs not supported')
+    p += 4
+    npieces, = struct.unpack_from('<I', data, p); p += 4
+    segs, meshes, names, lods, seg_start = [], [], [], [], 0
+    for _ in range(npieces):
+        name, p = _string(data, p)
+        nlod, = struct.unpack_from('<I', data, p); p += 4 + 4 * nlod + 8
+        for li in range(nlod):
+            objtype, = struct.unpack_from('<I', data, p + 25); p += 29
+            osz, = struct.unpack_from('<I', data, p)
+            segs.append(bytes(data[seg_start:p]))
+            if objtype == 5:
+                meshes.append(_parse_skel_at(data, p)[0])
+            elif objtype == 4:
+                meshes.append(_parse_rigid(data, p))
+            else:
+                raise ValueError(f'unknown render object type {objtype}')
+            names.append(name); lods.append(li)
+            seg_start = p + 4 + osz
+            p = seg_start
+            p += 1 + data[p]          # used-node list (u8 count + bytes) stays inside the next opaque segment
+    segs.append(bytes(data[seg_start:]))
+    return Model(segs, meshes, names, lods)
+
+
+def _parse_skel_at(data, p):
+    """Parse a skinned mesh whose object-size field is at offset p."""
+    # reuse parse() machinery by building the same checks inline
+    osz, = struct.unpack_from('<I', data, p); q = p + 4
+    nv, npoly, mbt, mbv = struct.unpack_from('<4I', data, q); q += 16
+    reidx = data[q]; q += 1
+    flags = struct.unpack_from('<4I', data, q); q += 16
+    palettes = data[q]; q += 1
+    if palettes or flags[0] != 0x13 or flags[1:] != (0, 0, 0):
+        raise ValueError(f'unsupported skinned mesh variant: palettes={palettes} flags={flags}')
+    nblend = mbt - 1
+    vsize = 4 * (3 + nblend + 3 + 2)
+    f = np.frombuffer(data, np.uint8, nv * vsize, q).reshape(nv, vsize).view(np.float32).reshape(nv, vsize // 4)
+    pos, blend = f[:, 0:3], f[:, 3:3 + nblend]
+    normal, uv = f[:, 3 + nblend:6 + nblend], f[:, 6 + nblend:8 + nblend]
+    q += nv * vsize
+    tris = np.frombuffer(data, np.uint16, npoly * 3, q).reshape(npoly, 3); q += npoly * 6
+    nbs, = struct.unpack_from('<I', data, q); q += 4
+    bs = []
+    for _ in range(nbs):
+        fv, vc = struct.unpack_from('<HH', data, q)
+        bs.append(BoneSet(fv, vc, bytes(data[q + 4:q + 8]), struct.unpack_from('<I', data, q + 8)[0])); q += 12
+    m = SkelMesh(mbt, mbv, reidx, flags, palettes, pos.copy(), blend.copy(), normal.copy(), uv.copy(), tris.copy(), bs)
+    return m, q - (p + 4), osz
+
+
+def serialize_model(model: Model, patch_tri_total: bool = True) -> bytes:
+    out = bytearray()
+    for i, m in enumerate(model.meshes):
+        out += model.segments[i]
+        body = serialize_mesh(m) if isinstance(m, SkelMesh) else _serialize_rigid(m)
+        out += struct.pack('<I', len(body)) + body
+    out += model.segments[-1]
+    if patch_tri_total:  # allocation block, 6th count (only read by the engine, never used to size buffers)
+        struct.pack_into('<I', out, 44, sum(m.n_tris for m in model.meshes))
+    return bytes(out)

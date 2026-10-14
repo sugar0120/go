@@ -143,3 +143,31 @@ def check(m: SkelMesh) -> list[str]:
     if not ((np.abs(nl - 1.0) < 1e-2) | (nl < 1e-6)).all():
         bad.append("normals neither unit length nor zero")
     return bad
+
+
+def improve_rigid(m):
+    """Same upgrade for a RigidMesh (one bone, no bone sets): wrap it as one bone set, improve, unwrap."""
+    from .ltbmesh import RigidMesh
+
+    n = m.n_verts
+    wrapped = SkelMesh(2, 1, 0, m.stream_flags, 0, m.pos, np.zeros((n, 1), np.float32), m.normal, m.uv, m.tris,
+                       [BoneSet(0, n, bytes([m.bone_effector & 0xFF, 255, 255, 255]), 3 * len(m.tris))])
+    out, stats = improve(wrapped)
+    return RigidMesh(m.max_bones_per_tri, m.max_bones_per_vert, m.stream_flags, m.bone_effector,
+                     out.pos, out.normal, out.uv, out.tris), stats
+
+
+def improve_model(model):
+    """Improve the most detailed level (LOD 0) of every piece of a ltbmesh.Model in place. Returns per-piece stats."""
+    from .ltbmesh import RigidMesh
+
+    stats = []
+    for i, m in enumerate(model.meshes):
+        if model.lods[i] != 0:      # only the most detailed level is the one seen up close
+            continue
+        new, s = improve(m) if isinstance(m, SkelMesh) else improve_rigid(m)
+        s["before"] = (m.n_verts, m.n_tris)
+        s["after"] = (new.n_verts, new.n_tris)
+        model.meshes[i] = new
+        stats.append(s)
+    return stats
