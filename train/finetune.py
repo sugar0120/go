@@ -37,6 +37,7 @@ p.add_argument("--save-every", type=int, default=500)
 p.add_argument("--val-every", type=int, default=500)
 p.add_argument("--start-step", type=int, default=0, help="steps already done on earlier boxes (when --model is a pulled EMA)")
 p.add_argument("--max-val", type=int, default=256)
+p.add_argument("--hf-repo", default=os.environ.get("CA_HF_REPO", ""), help="private HF dataset repo; checkpoints are uploaded straight from the box when HF_TOKEN is set")
 a = p.parse_args()
 os.makedirs(a.out, exist_ok=True)
 dev = "cuda"
@@ -51,6 +52,19 @@ def log(*x):
     print(s, flush=True)
     logf.write(s + "\n")
     logf.flush()
+
+
+def hf_push(path, name=None):
+    """Upload one file to the private HF repo (datacenter speed). Never raises: training must not stop for storage."""
+    if not (a.hf_repo and os.environ.get("HF_TOKEN")):
+        return
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi(token=os.environ["HF_TOKEN"])
+        api.create_repo(a.hf_repo, repo_type="dataset", private=True, exist_ok=True)
+        api.upload_file(path_or_fileobj=path, path_in_repo=f"run1/{name or os.path.basename(path)}", repo_id=a.hf_repo, repo_type="dataset")
+    except Exception as e:  # noqa: BLE001
+        log("hf upload failed:", str(e)[:120])
 
 
 def load_split(split, limit=None):
@@ -223,11 +237,14 @@ while step < a.iters:
         if el < best:
             best = el
             torch.save(ema.state_dict(), os.path.join(a.out, "best.pth"))
+            hf_push(os.path.join(a.out, "best.pth"))
     if step % a.save_every == 0 or step == a.iters:
         torch.save({"net": net.state_dict(), "ema": ema.state_dict(), "D": D.state_dict(), "opt_g": opt_g.state_dict(),
                     "opt_d": opt_d.state_dict(), "step": step, "best": best}, os.path.join(a.out, f"ckpt_{step}.pt"))
         torch.save({k: v.half() for k, v in ema.state_dict().items()}, os.path.join(a.out, f"ema_{step}_fp16.pth"))  # small enough to pull off the box
         torch.save(ema.state_dict(), os.path.join(a.out, f"ema_{step}.pth"))
+        hf_push(os.path.join(a.out, f"ema_{step}_fp16.pth"))
+        hf_push(os.path.join(a.out, "progress.txt"))
         for old in ckpts()[:-2]:
             os.remove(old)
         log(f"saved step {step}")
