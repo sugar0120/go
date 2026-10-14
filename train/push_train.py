@@ -20,6 +20,11 @@ for dst, src in files.items():
 print("subprocess.run([sys.executable,'-m','pip','install','-q','lpips','spandrel','etcpak'],capture_output=True)")
 if mode == "dataset":
     print(f"cmd = 'nohup ' + sys.executable + ' /tmp/ca/train/build_dataset.py /tmp/ca/code /tmp/ca/ds {extra} > /tmp/ca/ds.log 2>&1 &'")
+elif mode == "chain":
+    # dataset args come first (before a literal '--' ), finetune args after it
+    ds_args, _, ft_args = extra.partition(" -- ")
+    print("py = sys.executable")
+    print(f"cmd = 'nohup sh -c \"' + py + ' /tmp/ca/train/build_dataset.py /tmp/ca/code /tmp/ca/ds {ds_args} > /tmp/ca/ds.log 2>&1 && ' + py + ' /tmp/ca/train/finetune.py --data /tmp/ca/ds --model /tmp/ca/models/4x-UltraSharp.pth --out /tmp/ca/run1 {ft_args} > /tmp/ca/train.log 2>&1\" > /tmp/ca/chain.log 2>&1 &'")
 else:
     print("cmd = 'nohup ' + sys.executable + ' /tmp/ca/train/finetune.py --data /tmp/ca/ds --model /tmp/ca/models/4x-UltraSharp.pth "
           f"--out /tmp/ca/run1 {extra} > /tmp/ca/train.log 2>&1 &'")

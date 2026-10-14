@@ -33,13 +33,25 @@ AMB_PREFIXES = ("Metal", "PaintedMetal", "Rust", "Concrete", "Bricks", "Wood", "
 PH_CATEGORIES = ("metal", "concrete", "brick", "wood", "fabric", "rock", "sand", "planks", "floor", "wall")
 
 
-def get(url, tries=3):
+def get(url, tries=4):
+    import time
     for i in range(tries):
         try:
             return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120).read()
         except Exception:
             if i == tries - 1:
                 raise
+            time.sleep(2 * (i + 1))
+
+
+def safe(fn):
+    def run(item):
+        try:
+            return fn(item)
+        except Exception as e:  # one bad download must not kill the whole build
+            print("skip", item, str(e)[:80], flush=True)
+            return (item[0] if isinstance(item, tuple) else item), 0, None
+    return run
 
 
 def dxt1_roundtrip(img):
@@ -129,10 +141,10 @@ def do_polyhaven(pid):
 
 
 sources, total = [], 0
-for label, items, fn in (("ambientCG", ambient_list(N_AMB) if N_AMB else [], do_ambient),
-                         ("polyhaven", polyhaven_list(N_PH) if N_PH else [], do_polyhaven)):
+for label, items, fn in (("ambientCG", ambient_list(N_AMB) if N_AMB else [], safe(do_ambient)),
+                         ("polyhaven", polyhaven_list(N_PH) if N_PH else [], safe(do_polyhaven))):
     print(label, len(items), "assets", flush=True)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(16) as ex:
         for aid, n, url in ex.map(fn, items):
             total += n
             sources.append({"source": label, "id": aid, "pairs": n, "url": url})

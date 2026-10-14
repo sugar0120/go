@@ -33,8 +33,9 @@ p.add_argument("--gan", type=float, default=0.05)
 p.add_argument("--gan-start", type=int, default=500)
 p.add_argument("--perc", type=float, default=1.0)
 p.add_argument("--ema", type=float, default=0.999)
-p.add_argument("--save-every", type=int, default=1000)
-p.add_argument("--val-every", type=int, default=1000)
+p.add_argument("--save-every", type=int, default=500)
+p.add_argument("--val-every", type=int, default=500)
+p.add_argument("--start-step", type=int, default=0, help="steps already done on earlier boxes (when --model is a pulled EMA)")
 p.add_argument("--max-val", type=int, default=256)
 a = p.parse_args()
 os.makedirs(a.out, exist_ok=True)
@@ -109,7 +110,7 @@ from spandrel import ModelLoader  # noqa: E402
 import lpips  # noqa: E402
 
 desc = ModelLoader().load_from_file(a.model)
-net = desc.model.to(dev)
+net = desc.model.float().to(dev)  # also accepts a pulled fp16 EMA file as --model (resume on a fresh box)
 assert desc.scale == 4, desc.scale
 for q in net.parameters():
     q.requires_grad_(True)
@@ -151,7 +152,7 @@ def ckpts():
     return sorted(glob.glob(os.path.join(a.out, "ckpt_*.pt")), key=lambda f: int(f.split("_")[-1][:-3]))
 
 
-step, best = 0, 1e9
+step, best = a.start_step, 1e9
 cs = ckpts()
 if cs:
     ck = torch.load(cs[-1], map_location=dev)
