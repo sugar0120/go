@@ -15,29 +15,39 @@ import marimo
 __generated_with = "0.25.1"
 app = marimo.App(width="medium")
 
+with app.setup:
+    # Shared imports and constants: available in every cell without being passed around.
+    import os
+    import subprocess
+    import sys
+    import urllib.request
+
+    import marimo as mo
+
+    ROOT = "/tmp/ca/go"  # repo clone on the sandbox (ephemeral)
+    MODEL = "/tmp/ca/models/4x-UltraSharp.pth"
+    DATA = "/tmp/ca/ds"
+    RUN = "/tmp/ca/run1"
+
 
 @app.cell
 def _():
-    import marimo as mo
+    mo.md(r"""
+    # Combat Arms texture fine-tune (molab)
 
-    mo.md(
-        """
-        # Combat Arms texture fine-tune (molab)
+    1. Attach the GPU (notebook specs button), then run **Setup**.
+    2. Optional: paste a Hugging Face **write** token and a private repo name so checkpoints survive a reclaim.
+    3. **Build dataset**, then **Train**. If the sandbox is reclaimed, open a new one and run the same cells:
+       it resumes from the newest checkpoint in the Hugging Face repo.
+    4. **Try it** on a texture, then use the download buttons.
 
-        1. Attach the GPU (notebook specs button), then run **Setup**.
-        2. Optional: paste a Hugging Face **write** token and a private repo name so checkpoints survive a reclaim.
-        3. **Build dataset**, then **Train**. If the sandbox is reclaimed, open a new one and run the same cells:
-           it resumes from the newest checkpoint in the Hugging Face repo.
-        4. **Try it** on a texture, then use the download buttons.
-
-        The token is kept in memory only. Do not paste secrets into code cells: this notebook is public by link.
-        """
-    )
-    return (mo,)
+    The token is kept in memory only. Do not paste secrets into code cells: this notebook is public by link.
+    """)
+    return
 
 
 @app.cell
-def _(mo):
+def _():
     branch = mo.ui.text(value="worktree-l96-pilot", label="Repo branch (sugar0120/go)")
     hf_repo = mo.ui.text(value="", placeholder="your-hf-user/ca-textures", label="Private HF dataset repo (optional)")
     hf_token = mo.ui.text(value="", kind="password", label="HF write token (optional)")
@@ -49,21 +59,14 @@ def _(mo):
 
 
 @app.cell
-def _(branch, mo, setup_btn):
+def _(branch, setup_btn):
     mo.stop(not setup_btn.value, mo.md("Click **Setup**."))
-    import os
-    import subprocess
-    import sys
-    import urllib.request
-
-    ROOT = "/tmp/ca/go"
     os.makedirs("/tmp/ca/models", exist_ok=True)
     if not os.path.exists(ROOT):
         subprocess.run(["git", "clone", "--depth", "1", "-b", branch.value, "https://github.com/sugar0120/go", ROOT],
                        check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "spandrel", "lpips", "etcpak", "huggingface_hub"],
                    capture_output=True)
-    MODEL = "/tmp/ca/models/4x-UltraSharp.pth"
     if not os.path.exists(MODEL):
         urllib.request.urlretrieve("https://huggingface.co/Kim2091/UltraSharp/resolve/main/4x-UltraSharp.pth", MODEL)
     import torch
@@ -71,11 +74,11 @@ def _(branch, mo, setup_btn):
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
     mo.callout(mo.md(f"GPU: **{gpu}**" if gpu else "**No GPU attached.** Use the notebook specs button, then rerun."),
                kind="success" if gpu else "danger")
-    return MODEL, ROOT, os, subprocess, sys
+    return
 
 
 @app.cell
-def _(mo):
+def _():
     ds_assets = mo.ui.slider(40, 150, step=10, value=70, label="CC0 materials per source (ambientCG, Poly Haven)")
     ds_btn = mo.ui.run_button(label="Build dataset")
     mo.vstack([ds_assets, ds_btn])
@@ -83,9 +86,9 @@ def _(mo):
 
 
 @app.cell
-def _(ROOT, ds_assets, ds_btn, mo, os, subprocess, sys):
+def _(ds_assets, ds_btn):
     mo.stop(not ds_btn.value, mo.md("Click **Build dataset** (a few minutes)."))
-    _cmd = [sys.executable, f"{ROOT}/train/build_dataset.py", ROOT, "/tmp/ca/ds", "--ambient", str(ds_assets.value),
+    _cmd = [sys.executable, f"{ROOT}/train/build_dataset.py", ROOT, DATA, "--ambient", str(ds_assets.value),
             "--polyhaven", str(ds_assets.value), "--crops", "24"]
     _p = subprocess.Popen(_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     _tail = []
@@ -93,20 +96,20 @@ def _(ROOT, ds_assets, ds_btn, mo, os, subprocess, sys):
         _tail = (_tail + [_line.rstrip()])[-8:]
         mo.output.replace(mo.md("```\n" + "\n".join(_tail) + "\n```"))
     _p.wait()
-    _n = len(os.listdir("/tmp/ca/ds/train/hr")) if os.path.isdir("/tmp/ca/ds/train/hr") else 0
+    _n = len(os.listdir(f"{DATA}/train/hr")) if os.path.isdir(f"{DATA}/train/hr") else 0
     mo.md(f"Dataset ready: **{_n}** training pairs.")
     return
 
 
 @app.cell
-def _(mo):
+def _():
     train_btn = mo.ui.run_button(label="Train (resumes from the HF repo if it has a checkpoint)")
     train_btn
     return (train_btn,)
 
 
 @app.cell
-def _(MODEL, ROOT, ckpt_every, hf_repo, hf_token, iters, mo, os, subprocess, sys, train_btn):
+def _(ckpt_every, hf_repo, hf_token, iters, train_btn):
     mo.stop(not train_btn.value, mo.md("Click **Train**."))
     _env = dict(os.environ)
     _model, _start = MODEL, 0
@@ -125,8 +128,8 @@ def _(MODEL, ROOT, ckpt_every, hf_repo, hf_token, iters, mo, os, subprocess, sys
                 _start = int(_best.split("_")[-2])
         except Exception as _e:  # no repo yet is fine
             print("resume check:", str(_e)[:100])
-    _cmd = [sys.executable, f"{ROOT}/train/finetune.py", "--data", "/tmp/ca/ds", "--model", _model, "--out",
-            "/tmp/ca/run1", "--iters", str(iters.value), "--save-every", str(ckpt_every.value), "--val-every",
+    _cmd = [sys.executable, f"{ROOT}/train/finetune.py", "--data", DATA, "--model", _model, "--out",
+            RUN, "--iters", str(iters.value), "--save-every", str(ckpt_every.value), "--val-every",
             str(ckpt_every.value), "--start-step", str(_start)]
     if hf_repo.value:
         _cmd += ["--hf-repo", hf_repo.value]
@@ -144,7 +147,7 @@ def _(MODEL, ROOT, ckpt_every, hf_repo, hf_token, iters, mo, os, subprocess, sys
 
 
 @app.cell
-def _(mo):
+def _():
     upload = mo.ui.file(filetypes=[".dtx"], label="Upload the original .dtx to try the model on")
     scale = mo.ui.dropdown({"2x (2048)": 2, "4x (4096)": 4}, value="2x (2048)", label="Output scale")
     try_btn = mo.ui.run_button(label="Upscale with the fine-tuned model (and the stock model for comparison)")
@@ -153,11 +156,8 @@ def _(mo):
 
 
 @app.cell
-def _(MODEL, ROOT, mo, os, scale, sys, try_btn, upload):
+def _(scale, try_btn, upload):
     mo.stop(not (try_btn.value and upload.value), mo.md("Upload a .dtx and click the button."))
-    import glob
-    import io
-
     import numpy as np
     from PIL import Image
 
@@ -180,8 +180,7 @@ def _(MODEL, ROOT, mo, os, scale, sys, try_btn, upload):
         _a = (np.clip(_big, 0, 1) * 255 + 0.5).astype(np.uint8)
         return np.concatenate([_a, np.full(_a.shape[:2] + (1,), 255, np.uint8)], -1)
 
-    _ft = sorted(glob.glob("/tmp/ca/run1/ema_*.pth"), key=lambda f: int(f.split("_")[-1].split(".")[0].replace("fp16", "") or 0))
-    _best = "/tmp/ca/run1/best.pth" if os.path.exists("/tmp/ca/run1/best.pth") else None
+    _best = f"{RUN}/best.pth" if os.path.exists(f"{RUN}/best.pth") else None
     stock_out = _run(MODEL)
     tuned_out = _run(_best) if _best else None
     _crop = (_w * _s // 4, _h * _s // 4, 256)
@@ -196,13 +195,13 @@ def _(MODEL, ROOT, mo, os, scale, sys, try_btn, upload):
 
 
 @app.cell
-def _(dtx, mo, orig_dtx, os, stock_out, tuned_out):
+def _(dtx, orig_dtx, stock_out, tuned_out):
     # DTX files keep the original header, flags and command string (ca_pipeline/dtx.py).
     _items = [mo.download(data=dtx.write(orig_dtx, stock_out), filename="stock_ultrasharp.dtx", label="stock .dtx")]
     if tuned_out is not None:
         _items.append(mo.download(data=dtx.write(orig_dtx, tuned_out), filename="finetuned.dtx", label="fine-tuned .dtx"))
-    if os.path.exists("/tmp/ca/run1/best.pth"):
-        _items.append(mo.download(data=open("/tmp/ca/run1/best.pth", "rb").read(), filename="best.pth",
+    if os.path.exists(f"{RUN}/best.pth"):
+        _items.append(mo.download(data=open(f"{RUN}/best.pth", "rb").read(), filename="best.pth",
                                   label="fine-tuned weights"))
     mo.hstack(_items, justify="start")
     return
