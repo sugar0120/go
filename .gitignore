@@ -15,3 +15,5 @@ pilot/staged/
 *.dtx
 *.rez
 *.ltb
+pilot/_*
+train/_*
